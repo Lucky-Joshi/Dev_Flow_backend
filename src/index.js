@@ -12,6 +12,11 @@ const app = express();
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
 app.use(express.json());
 
+// Basic route to check if API is running
+app.get("/", (req, res) => {
+  res.send("DevFlow API Running 🚀");
+});
+
 // Routes
 app.use('/auth', authRoutes);
 app.use('/projects', projectRoutes);
