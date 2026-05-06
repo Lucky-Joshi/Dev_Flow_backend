@@ -1,5 +1,4 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const supabase = require('../lib/supabase');
 const prisma = require('../lib/prisma');
 
 async function signup(req, res, next) {
@@ -9,17 +8,27 @@ async function signup(req, res, next) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) return res.status(409).json({ error: 'Email already in use' });
-
-    const hashed = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { name, email, password: hashed },
-      select: { id: true, name: true, email: true },
+    // Create user in Supabase Auth
+    const { data, error } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true, // auto-confirm so user can log in immediately
+      user_metadata: { name },
     });
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ token, user });
+    if (error) {
+      const status = error.message.includes('already') ? 409 : 400;
+      return res.status(status).json({ error: error.message });
+    }
+
+    // Sync profile row in our DB
+    await prisma.user.upsert({
+      where: { id: data.user.id },
+      update: { name, email },
+      create: { id: data.user.id, name, email },
+    });
+
+    res.status(201).json({ message: 'Account created. Please sign in.' });
   } catch (err) {
     next(err);
   }
@@ -32,14 +41,19 @@ async function login(req, res, next) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (error) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
+    const user = { id: data.user.id, email: data.user.email, name: data.user.user_metadata?.name };
+
+    res.json({
+      token: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      user,
+    });
   } catch (err) {
     next(err);
   }
