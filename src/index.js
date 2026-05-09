@@ -16,6 +16,16 @@ app.use(express.json());
 app.get('/', (req, res) => res.send('DevFlow API Running 🚀'));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// Temporary: verify env vars are loaded on Render (remove after confirming)
+app.get('/debug-auth', (req, res) => {
+  res.json({
+    ADMIN_EMAIL_SET: !!process.env.ADMIN_EMAIL,
+    ADMIN_EMAIL_VALUE: process.env.ADMIN_EMAIL || 'NOT SET',
+    ADMIN_PASSWORD_SET: !!process.env.ADMIN_PASSWORD,
+    JWT_SECRET_SET: !!process.env.JWT_SECRET,
+  });
+});
+
 app.use('/auth',      authRoutes);
 app.use('/projects',  projectRoutes);
 app.use('/tasks',     taskRoutes);
