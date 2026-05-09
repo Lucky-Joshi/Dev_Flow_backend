@@ -17,7 +17,6 @@ app.use(express.json());
 app.get('/', (req, res) => res.send('DevFlow API Running 🚀'));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-// Temporary: verify env vars are loaded on Render (remove after confirming)
 app.get('/debug-auth', (req, res) => {
   res.json({
     ADMIN_EMAIL_SET: !!process.env.ADMIN_EMAIL,
@@ -25,6 +24,18 @@ app.get('/debug-auth', (req, res) => {
     ADMIN_PASSWORD_SET: !!process.env.ADMIN_PASSWORD,
     JWT_SECRET_SET: !!process.env.JWT_SECRET,
   });
+});
+
+// Check if admin row exists in DB
+app.get('/debug-db', async (req, res) => {
+  const prisma = require('./lib/prisma');
+  try {
+    const user = await prisma.user.findUnique({ where: { id: 'admin' } });
+    const projectCount = await prisma.project.count();
+    res.json({ adminRowExists: !!user, adminRow: user, totalProjects: projectCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.use('/auth',      authRoutes);
@@ -39,10 +50,22 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3001;
 
-seedAdmin()
-  .then(() => app.listen(PORT, () => console.log(`DevFlow API running on port ${PORT}`)))
-  .catch((err) => {
-    console.error('Seed failed (non-fatal):', err.message);
-    // Start server anyway — seed will retry on next deploy or can be run manually
-    app.listen(PORT, () => console.log(`DevFlow API running on port ${PORT} (seed skipped)`));
-  });
+async function startServer() {
+  // Retry seed up to 3 times (handles cold DB connections on Render)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await seedAdmin();
+      break;
+    } catch (err) {
+      console.error(`Seed attempt ${attempt}/3 failed:`, err.message);
+      if (attempt === 3) {
+        console.error('All seed attempts failed — starting anyway, data may be missing');
+      } else {
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+      }
+    }
+  }
+  app.listen(PORT, () => console.log(`DevFlow API running on port ${PORT}`));
+}
+
+startServer();
