@@ -30,4 +30,8 @@ const PORT = process.env.PORT || 3001;
 
 seedAdmin()
   .then(() => app.listen(PORT, () => console.log(`DevFlow API running on port ${PORT}`)))
-  .catch((err) => { console.error('Startup failed:', err); process.exit(1); });
+  .catch((err) => {
+    console.error('Seed failed (non-fatal):', err.message);
+    // Start server anyway — seed will retry on next deploy or can be run manually
+    app.listen(PORT, () => console.log(`DevFlow API running on port ${PORT} (seed skipped)`));
+  });
