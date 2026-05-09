@@ -38,6 +38,13 @@ app.get('/debug-db', async (req, res) => {
   }
 });
 
+// Check raw DB URL (masked)
+app.get('/debug-db-url', (req, res) => {
+  const url = process.env.DATABASE_URL || 'NOT SET';
+  const masked = url.replace(/:([^:@]+)@/, ':****@');
+  res.json({ DATABASE_URL: masked, length: url.length });
+});
+
 app.use('/auth',      authRoutes);
 app.use('/projects',  projectRoutes);
 app.use('/tasks',     taskRoutes);
