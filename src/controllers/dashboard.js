@@ -9,9 +9,8 @@ async function getDashboard(req, res, next) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Single round-trip for all aggregated counts — avoids connection pool exhaustion
-    const [rows, recentTasks] = await Promise.all([
-      prisma.$queryRaw`
+    // Single round-trip for all aggregated counts
+    const [rows] = await prisma.$queryRaw`
         SELECT
           (SELECT COUNT(*)::int FROM "Project" WHERE "userId" = ${userId})                           AS "totalProjects",
           (SELECT COUNT(*)::int FROM "Task"   WHERE "projectId" IN
@@ -23,14 +22,14 @@ async function getDashboard(req, res, next) {
              AND "deadline" >= ${today}
              AND "deadline" <  ${tomorrow}
              AND "status"::text <> 'DONE')                                                            AS "dueTodayTasks"
-      `,
-      prisma.task.findMany({
-        where: { project: { userId } },
-        orderBy: { updatedAt: 'desc' },
-        take: 5,
-        include: { project: { select: { name: true } } },
-      }),
-    ]);
+    `;
+
+    const recentTasks = await prisma.task.findMany({
+      where: { project: { userId } },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+      include: { project: { select: { name: true } } },
+    });
 
     const { totalProjects, totalTasks, completedTasks, dueTodayTasks } = rows[0];
     res.json({ totalProjects, totalTasks, completedTasks, dueTodayTasks, recentTasks });
