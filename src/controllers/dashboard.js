@@ -9,29 +9,25 @@ async function getDashboard(req, res, next) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Single round-trip for all aggregated counts
-    const [rows] = await prisma.$queryRaw`
-        SELECT
-          (SELECT COUNT(*)::int FROM "Project" WHERE "userId" = ${userId})                           AS "totalProjects",
-          (SELECT COUNT(*)::int FROM "Task"   WHERE "projectId" IN
-            (SELECT "id" FROM "Project" WHERE "userId" = ${userId}))                                 AS "totalTasks",
-          (SELECT COUNT(*)::int FROM "Task"   WHERE "projectId" IN
-            (SELECT "id" FROM "Project" WHERE "userId" = ${userId}) AND "status"::text = 'DONE')      AS "completedTasks",
-          (SELECT COUNT(*)::int FROM "Task"   WHERE "projectId" IN
-            (SELECT "id" FROM "Project" WHERE "userId" = ${userId})
-             AND "deadline" >= ${today}
-             AND "deadline" <  ${tomorrow}
-             AND "status"::text <> 'DONE')                                                            AS "dueTodayTasks"
-    `;
+    const [totalProjects, totalTasks, completedTasks, dueTodayTasks, recentTasks] = await prisma.$transaction([
+      prisma.project.count({ where: { userId } }),
+      prisma.task.count({ where: { project: { userId } } }),
+      prisma.task.count({ where: { project: { userId }, status: 'DONE' } }),
+      prisma.task.count({
+        where: {
+          project: { userId },
+          deadline: { gte: today, lt: tomorrow },
+          status: { not: 'DONE' },
+        },
+      }),
+      prisma.task.findMany({
+        where: { project: { userId } },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        include: { project: { select: { name: true } } },
+      }),
+    ]);
 
-    const recentTasks = await prisma.task.findMany({
-      where: { project: { userId } },
-      orderBy: { updatedAt: 'desc' },
-      take: 5,
-      include: { project: { select: { name: true } } },
-    });
-
-    const { totalProjects, totalTasks, completedTasks, dueTodayTasks } = rows[0];
     res.json({ totalProjects, totalTasks, completedTasks, dueTodayTasks, recentTasks });
   } catch (err) { next(err); }
 }
